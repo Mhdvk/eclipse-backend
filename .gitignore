@@ -1,0 +1,21 @@
+# Rahasia & Konfigurasi Lokal (JANGAN DI-PUSH)
+.env
+.env.*
+
+# Dataset Besar (Sudah masuk ke database Neon)
+attack_sim/
+*.parquet
+
+# Cache & Virtual Environment Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# File Sistem & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
