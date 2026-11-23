@@ -16,6 +16,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = FastAPI(title="Eclipse IDS Dashboard API")
 
+@app.get("/health")
+def health():
+  return {"status": "ok"}
+
 # Izinkan akses dari Frontend (CORS)
 app.add_middleware(
     CORSMiddleware,
@@ -194,7 +198,7 @@ async def analyze_uploaded_csv(file: UploadFile = File(...)):
         float(pred_data["probabilities"][i]),
     ))
 
-  conn = psycopg2.connect(**DB_CONFIG)
+  conn = psycopg2.connect(DATABASE_URL)
   cur = conn.cursor()
   execute_values(
       cur,
