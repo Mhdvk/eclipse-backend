@@ -33,7 +33,6 @@ API_URL = "https://yuellen.my.id/pred/predict"
 load_dotenv() 
 DATABASE_URL = os.getenv("DATABASE_URL")  
 
-
 session = requests.Session()
 session.mount("https://", TLS12Adapter())
 
