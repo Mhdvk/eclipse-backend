@@ -9,6 +9,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
 import requests
 import urllib3
+import os
+from dotenv import load_dotenv
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -24,20 +26,16 @@ app.add_middleware(
 
 # --- KONFIGURASI ---
 API_URL = "https://yuellen.my.id/pred/predict"
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "dbname": "eclipse",
-    "user": "postgres",
-    "password": "123",
-}
+load_dotenv() 
+DATABASE_URL = os.getenv("DATABASE_URL")  
+
 
 session = requests.Session()
 session.mount("https://", TLS12Adapter())
 
 
 def get_db():
-  return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
+  return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 
 # 1. KPI Summary & Persentase Attack
