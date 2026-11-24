@@ -47,13 +47,26 @@ session.mount("https://", TLS12Adapter())
 def get_db():
   return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
+# --- TIME RANGE FILTER ---
+# Window dihitung dari timestamp data TERBARU di tabel (bukan NOW()),
+# supaya filter tetap bekerja untuk data historis maupun data live.
+TIME_RANGE_INTERVALS = {"1h": "1 hour", "24h": "24 hours", "7d": "7 days"}
+
+
+def time_range_condition(time_range):
+  interval = TIME_RANGE_INTERVALS.get(time_range)
+  if not interval:
+    return ""
+  return f"flow_timestamp >= (SELECT MAX(flow_timestamp) FROM intrusion_logs) - INTERVAL '{interval}'"
 
 # 1. KPI Summary & Persentase Attack
 @app.get("/api/dashboard/summary")
-def get_summary():
+def get_summary(time_range: Optional[str] = None):
   conn = get_db()
   cur = conn.cursor()
-  cur.execute("""
+  cond = time_range_condition(time_range)
+  where = f"WHERE {cond}" if cond else ""
+  cur.execute(f"""
         SELECT 
             COUNT(*) AS total_traffic,
             COUNT(*) FILTER (WHERE prediction_code = 1) AS total_attack,
@@ -61,7 +74,7 @@ def get_summary():
             COALESCE(ROUND((COUNT(*) FILTER (WHERE prediction_code = 1)::NUMERIC / NULLIF(COUNT(*), 0)) * 100, 2), 0) AS attack_percentage,
             COUNT(DISTINCT dst_ip) FILTER (WHERE prediction_code = 1) AS affected_assets_count,
             COUNT(DISTINCT src_ip) FILTER (WHERE prediction_code = 1) AS unique_attackers_count
-        FROM intrusion_logs;
+            FROM intrusion_logs {where};
     """)
   data = cur.fetchone()
   cur.close()
@@ -70,17 +83,21 @@ def get_summary():
 
 
 # 2. Grafik Traffic per Hour (Benign vs Malicious)
+# 2. Grafik Traffic per Hour (Benign vs Malicious)
 @app.get("/api/dashboard/traffic-hourly")
-def get_traffic_hourly():
+def get_traffic_hourly(time_range: Optional[str] = None):
   conn = get_db()
   cur = conn.cursor()
-  cur.execute("""
+  cond = time_range_condition(time_range)
+  where = f"WHERE {cond}" if cond else ""
+  cur.execute(f"""
         SELECT 
             TO_CHAR(DATE_TRUNC('hour', flow_timestamp), 'YYYY-MM-DD HH24:00') AS hour,
             COUNT(*) AS total,
             COUNT(*) FILTER (WHERE prediction_code = 1) AS attack_count,
             COUNT(*) FILTER (WHERE prediction_code = 0) AS benign_count
         FROM intrusion_logs
+        {where}
         GROUP BY DATE_TRUNC('hour', flow_timestamp)
         ORDER BY DATE_TRUNC('hour', flow_timestamp) ASC;
     """)
@@ -92,15 +109,17 @@ def get_traffic_hourly():
 
 # 3. Top IP Penyerang (src_ip) & Top Aset Diserang (dst_ip)
 @app.get("/api/dashboard/top-ips")
-def get_top_ips(limit: int = 5):
+def get_top_ips(limit: int = 5, time_range: Optional[str] = None):
   conn = get_db()
   cur = conn.cursor()
+  cond = time_range_condition(time_range)
+  extra = f" AND {cond}" if cond else ""
 
   cur.execute(
-      """
+      f"""
         SELECT src_ip AS ip_address, COUNT(*) AS attack_count, MAX(attack_probability) AS max_confidence
         FROM intrusion_logs
-        WHERE prediction_code = 1
+        WHERE prediction_code = 1{extra}
         GROUP BY src_ip
         ORDER BY attack_count DESC
         LIMIT %s;
@@ -110,10 +129,10 @@ def get_top_ips(limit: int = 5):
   attackers = cur.fetchall()
 
   cur.execute(
-      """
+      f"""
         SELECT dst_ip AS ip_address, COUNT(*) AS attack_count, ARRAY_AGG(DISTINCT dst_port) AS targeted_ports
         FROM intrusion_logs
-        WHERE prediction_code = 1
+        WHERE prediction_code = 1{extra}
         GROUP BY dst_ip
         ORDER BY attack_count DESC
         LIMIT %s;
@@ -138,17 +157,21 @@ def get_logs(
     ),
     page: int = 1,
     limit: int = 20,
+    time_range: Optional[str] = Query(None, description="Filter: '1h', '24h', atau '7d'"),
+
 ):
   offset = (page - 1) * limit
   conditions = []
   params = []
-
   if label:
     conditions.append("prediction_label = %s")
     params.append(label)
   if search_ip:
     conditions.append("(src_ip ILIKE %s OR dst_ip ILIKE %s)")
     params.extend([f"%{search_ip}%", f"%{search_ip}%"])
+  tr_cond = time_range_condition(time_range)
+  if tr_cond:
+    conditions.append(tr_cond)
 
   where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -201,7 +224,7 @@ def get_model_metrics():
       "total_predictions": total_predictions,
       "model_status": "Aktif",
   }
-  
+
 # 5. Endpoint Upload CSV Baru untuk Dianalisis Langsung
 @app.post("/api/analyze-csv")
 async def analyze_uploaded_csv(file: UploadFile = File(...)):
