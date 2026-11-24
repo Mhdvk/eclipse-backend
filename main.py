@@ -30,6 +30,13 @@ app.add_middleware(
 
 # --- KONFIGURASI ---
 API_URL = "https://yuellen.my.id/pred/predict"
+
+# --- MODEL METRICS (dari evaluasi test set Hilal) ---
+MODEL_ACCURACY = "99.35%"
+MODEL_PRECISION = "96.65%"
+MODEL_RECALL = "99.13%"
+MODEL_F1 = "97.88%"
+MODEL_FPR = "0.61%"
 load_dotenv() 
 DATABASE_URL = os.getenv("DATABASE_URL")  
 
@@ -168,7 +175,33 @@ def get_logs(
 
   return {"total": total, "page": page, "limit": limit, "data": rows}
 
+# 6. Model Metrics (panel Model Performance di frontend)
+@app.get("/api/dashboard/model-metrics")
+def get_model_metrics():
+  conn = get_db()
+  cur = conn.cursor()
 
+  cur.execute("SELECT COUNT(*) AS c FROM intrusion_logs WHERE created_at::date = CURRENT_DATE;")
+  daily_predictions = cur.fetchone()["c"]
+
+  cur.execute("SELECT COUNT(*) AS c FROM intrusion_logs;")
+  total_predictions = cur.fetchone()["c"]
+
+  cur.close()
+  conn.close()
+
+  return {
+      "accuracy": MODEL_ACCURACY,
+      "precision": MODEL_PRECISION,
+      "recall": MODEL_RECALL,
+      "f1_score": MODEL_F1,
+      "fpr": MODEL_FPR,
+      "false_positive_rate": MODEL_FPR,
+      "daily_predictions": daily_predictions,
+      "total_predictions": total_predictions,
+      "model_status": "Aktif",
+  }
+  
 # 5. Endpoint Upload CSV Baru untuk Dianalisis Langsung
 @app.post("/api/analyze-csv")
 async def analyze_uploaded_csv(file: UploadFile = File(...)):
